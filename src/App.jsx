@@ -543,6 +543,13 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
 
   // --- INICIAR E ENCERRAR SESSÃO ---
   const connectSession = async () => {
+    if ('speechSynthesis' in window) {
+  window.speechSynthesis.cancel();
+  const unlockUtterance = new SpeechSynthesisUtterance('');
+  unlockUtterance.volume = 0;
+  window.speechSynthesis.speak(unlockUtterance);
+}
+    
     setErrorMsg(null);
     setIsConnecting(true);
     setLiveUserText('');
