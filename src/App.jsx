@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Mic, MicOff, Volume2, VolumeX, Globe, Award, MessageSquare, 
-  Sparkles, RefreshCw, Square, CheckCircle2, AlertCircle, 
+import {
+  Mic, MicOff, Volume2, VolumeX, Globe, Award, MessageSquare,
+  Sparkles, RefreshCw, Square, CheckCircle2, AlertCircle,
   Settings, Send, Languages, BookOpen, Compass, Clock, ArrowRight, Trash2, History
 } from 'lucide-react';
 
@@ -36,8 +36,9 @@ const PAUSE_OPTIONS = [
 const STORAGE_KEY_MESSAGES = 'lingualive_saved_messages_v1';
 const STORAGE_KEY_PREFS = 'lingualive_saved_prefs_v1';
 
+const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
 export default function App() {
-  // Carrega preferências salvas permanentemente
   const loadSavedPrefs = () => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PREFS);
@@ -72,7 +73,7 @@ export default function App() {
   const [userVolume, setUserVolume] = useState(0);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // Estados de Transcrição e Histórico Permanente (salvo no navegador)
+  // Estados de Transcrição e Histórico Permanente
   const [messages, setMessages] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_MESSAGES);
@@ -84,7 +85,7 @@ export default function App() {
   const [liveUserText, setLiveUserText] = useState('');
   const [textInput, setTextInput] = useState('');
 
-  // Refs para controle de Áudio, Reconhecimento de Voz, Acúmulo de Fala e Histórico API
+  // Refs para controle de Áudio, Reconhecimento de Voz e Histórico
   const recognitionRef = useRef(null);
   const conversationHistoryRef = useRef([]);
   const isConnectedRef = useRef(false);
@@ -97,13 +98,13 @@ export default function App() {
   const accumulatedTranscriptRef = useRef('');
   const currentInterimRef = useRef('');
   const silenceTimerRef = useRef(null);
+  const speechFallbackTimerRef = useRef(null);
 
   const audioCtxRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const animFrameRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // Salva mensagens automaticamente no localStorage sempre que atualizadas
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
@@ -112,7 +113,6 @@ export default function App() {
     }
   }, [messages]);
 
-  // Salva preferências automaticamente
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -173,6 +173,13 @@ export default function App() {
     setIsWaitingPause(false);
   };
 
+  const clearSpeechFallbackTimer = () => {
+    if (speechFallbackTimerRef.current) {
+      clearTimeout(speechFallbackTimerRef.current);
+      speechFallbackTimerRef.current = null;
+    }
+  };
+
   const handleClearHistory = () => {
     if (window.confirm('Deseja apagar todo o histórico salvo de conversas, traduções e correções?')) {
       setMessages([]);
@@ -183,6 +190,7 @@ export default function App() {
 
   // --- CONTROLE DE SÍNTESE DE VOZ (TTS NATIVO) ---
   const stopSpeech = () => {
+    clearSpeechFallbackTimer();
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -190,11 +198,18 @@ export default function App() {
     setAiSpeaking(false);
   };
 
+  const finishSpeakingAndListen = () => {
+    clearSpeechFallbackTimer();
+    aiSpeakingRef.current = false;
+    setAiSpeaking(false);
+    if (isConnectedRef.current && !isMicMutedRef.current) {
+      startRecognition();
+    }
+  };
+
   const speakResponse = (rawText) => {
     if (isSpeakerMutedRef.current || !('speechSynthesis' in window)) {
-      if (isConnectedRef.current && !isMicMutedRef.current) {
-        startRecognition();
-      }
+      finishSpeakingAndListen();
       return;
     }
 
@@ -212,9 +227,7 @@ export default function App() {
       .trim();
 
     if (!cleanForSpeech) {
-      if (isConnectedRef.current && !isMicMutedRef.current) {
-        startRecognition();
-      }
+      finishSpeakingAndListen();
       return;
     }
 
@@ -222,11 +235,17 @@ export default function App() {
     utterance.lang = selectedLang.code;
     utterance.rate = selectedLevel.rate;
 
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoices = voices.filter(v => v.lang.toLowerCase().startsWith(selectedLang.code.slice(0, 2).toLowerCase()));
-    const preferredVoice = matchingVoices.find(v => v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium')) || matchingVoices[0];
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    if (!isMobileDevice()) {
+      const voices = window.speechSynthesis.getVoices();
+      const matchingVoices = voices.filter(v =>
+        v.lang.toLowerCase().startsWith(selectedLang.code.slice(0, 2).toLowerCase())
+      );
+      const preferredVoice =
+        matchingVoices.find(v => v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Premium')) ||
+        matchingVoices[0];
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
     }
 
     utterance.onstart = () => {
@@ -235,22 +254,30 @@ export default function App() {
     };
 
     utterance.onend = () => {
-      aiSpeakingRef.current = false;
-      setAiSpeaking(false);
-      if (isConnectedRef.current && !isMicMutedRef.current) {
-        startRecognition();
-      }
+      finishSpeakingAndListen();
     };
 
     utterance.onerror = () => {
-      aiSpeakingRef.current = false;
-      setAiSpeaking(false);
-      if (isConnectedRef.current && !isMicMutedRef.current) {
-        startRecognition();
-      }
+      finishSpeakingAndListen();
     };
 
+    // Segurança para celulares onde onend não dispara se o áudio for bloqueado
+    const estimatedDurationMs = Math.max(4000, cleanForSpeech.length * 85);
+    speechFallbackTimerRef.current = setTimeout(() => {
+      if (aiSpeakingRef.current) {
+        finishSpeakingAndListen();
+      }
+    }, estimatedDurationMs);
+
+    window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
+
+    // Garante que o microfone libere caso o speak não inicie em 1.2s no celular
+    setTimeout(() => {
+      if (!aiSpeakingRef.current && isConnectedRef.current && !isMicMutedRef.current && !isThinkingRef.current) {
+        startRecognition();
+      }
+    }, 1200);
   };
 
   // --- ENVIO DA FALA ACUMULADA APÓS PAUSA OU CLIQUE MANUAL ---
@@ -277,7 +304,7 @@ export default function App() {
     }, pauseToleranceRef.current);
   };
 
-  // --- CONTROLE DE RECONHECIMENTO DE VOZ (STT CONTÍNUO COM TOLERÂNCIA A PAUSAS) ---
+  // --- CONTROLE DE RECONHECIMENTO DE VOZ (STT ADAPTADO PARA MOBILE E DESKTOP) ---
   const stopRecognition = () => {
     if (recognitionRef.current) {
       try {
@@ -287,7 +314,7 @@ export default function App() {
     }
   };
 
-const startRecognition = () => {
+  const startRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
@@ -295,10 +322,10 @@ const startRecognition = () => {
 
     try {
       const recognition = new SpeechRecognition();
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const mobile = isMobileDevice();
 
       recognition.lang = selectedLang.code;
-      recognition.continuous = !isMobile;
+      recognition.continuous = !mobile;
       recognition.interimResults = true;
 
       recognition.onresult = (event) => {
@@ -328,7 +355,6 @@ const startRecognition = () => {
       };
 
       recognition.onend = () => {
-        // Se no celular sobrou texto parcial quando o reconhecimento fechou, consolida
         if (currentInterimRef.current.trim()) {
           accumulatedTranscriptRef.current = `${accumulatedTranscriptRef.current} ${currentInterimRef.current}`.trim();
           currentInterimRef.current = '';
@@ -363,7 +389,7 @@ const startRecognition = () => {
     }
   };
 
-  // --- VISUALIZADOR DE VOLUME DO MICROFONE ---
+  // --- VISUALIZADOR DE VOLUME DO MICROFONE (APENAS DESKTOP) ---
   const startVolumeMeter = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -411,7 +437,7 @@ const startRecognition = () => {
     return null;
   };
 
-  // --- COMUNICAÇÃO SEGURA COM O BACKEND (/api/chat) COM FALLBACK LOCAL ---
+  // --- COMUNICAÇÃO SEGURA COM O BACKEND (/api/chat) ---
   const callGeminiAPI = async (userMessage, isInitial = false, keywordCommand = null) => {
     const systemInstruction = `
 Você é um professor de idiomas nativo, paciente, encorajador e altamente eficaz, ensinando ${selectedLang.name} (${selectedLang.native}) para um aluno brasileiro (falante de português).
@@ -463,24 +489,19 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
       contents: conversationHistoryRef.current
     };
 
-    // 1. Tenta chamar a rota segura da Vercel (/api/chat) onde a chave fica oculta
-   
-
     const serverRes = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-  });
+    });
 
-  const serverData = await serverRes.json().catch(() => ({}));
+    const serverData = await serverRes.json().catch(() => ({}));
 
-  if (!serverRes.ok) {
-    throw new Error(serverData.error || `Erro no servidor (${serverRes.status})`);
-  }
+    if (!serverRes.ok) {
+      throw new Error(serverData.error || `Erro no servidor (${serverRes.status})`);
+    }
 
-  const aiReply = serverData.reply || '';
-
-
+    const aiReply = serverData.reply || '';
 
     if (aiReply) {
       conversationHistoryRef.current.push({
@@ -529,6 +550,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
           }
         ]);
         speakResponse(aiReply);
+      } else if (isConnectedRef.current && !isMicMutedRef.current) {
+        startRecognition();
       }
     } catch (err) {
       console.error('Erro ao obter resposta do tutor:', err);
@@ -543,13 +566,14 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
 
   // --- INICIAR E ENCERRAR SESSÃO ---
   const connectSession = async () => {
+    // Desbloqueia o áudio no navegador móvel no momento exato do toque
     if ('speechSynthesis' in window) {
-  window.speechSynthesis.cancel();
-  const unlockUtterance = new SpeechSynthesisUtterance('');
-  unlockUtterance.volume = 0;
-  window.speechSynthesis.speak(unlockUtterance);
-}
-    
+      window.speechSynthesis.cancel();
+      const unlockUtterance = new SpeechSynthesisUtterance(' ');
+      unlockUtterance.volume = 0;
+      window.speechSynthesis.speak(unlockUtterance);
+    }
+
     setErrorMsg(null);
     setIsConnecting(true);
     setLiveUserText('');
@@ -565,7 +589,10 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
     try {
       isConnectedRef.current = true;
       setIsConnected(true);
-      await startVolumeMeter();
+
+      if (!isMobileDevice()) {
+        await startVolumeMeter();
+      }
 
       isThinkingRef.current = true;
       setIsThinking(true);
@@ -683,8 +710,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
 
           if (part.type === 'translation') {
             return (
-              <div 
-                key={idx} 
+              <div
+                key={idx}
                 className="my-2 p-3.5 rounded-xl bg-sky-50/95 border border-sky-200 text-slate-800 shadow-sm"
               >
                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-700 mb-2">
@@ -716,15 +743,15 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
           }
 
           return (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className="my-2 p-3.5 rounded-xl bg-amber-50/90 border border-amber-200/80 text-slate-800 shadow-sm"
             >
               <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-700 mb-2">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                 <span>Sugestão de Correção</span>
               </div>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-2">
                 <div className="p-2 rounded-lg bg-rose-50 border border-rose-200/70 text-rose-900">
                   <span className="block text-[10px] font-semibold uppercase text-rose-500 mb-0.5">Você disse:</span>
@@ -819,8 +846,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
               <span>{errorMsg}</span>
             </div>
-            <button 
-              onClick={() => setErrorMsg(null)} 
+            <button
+              onClick={() => setErrorMsg(null)}
               className="text-xs font-semibold underline hover:text-rose-950"
             >
               Fechar
@@ -831,10 +858,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
 
       {/* CONTEÚDO PRINCIPAL */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
         {/* COLUNA ESQUERDA: CONFIGURAÇÕES E CONTROLES DE ÁUDIO */}
         <aside className="lg:col-span-4 space-y-5">
-          
           {/* Painel de Estúdio de Voz */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -857,10 +882,10 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
                   </>
                 )}
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-md transition-transform duration-300 z-10 ${
-                  aiSpeaking 
-                    ? 'bg-indigo-600 text-white scale-110 ring-4 ring-indigo-200' 
-                    : isConnected 
-                      ? 'bg-white text-slate-800 border-2 border-indigo-200' 
+                  aiSpeaking
+                    ? 'bg-indigo-600 text-white scale-110 ring-4 ring-indigo-200'
+                    : isConnected
+                      ? 'bg-white text-slate-800 border-2 border-indigo-200'
                       : 'bg-slate-200 text-slate-500'
                 }`}>
                   {selectedLang.flag}
@@ -872,26 +897,26 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
                   Tutor de {selectedLang.name}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {!isConnected 
-                    ? 'Aguardando início da sessão' 
-                    : aiSpeaking 
-                      ? 'Falando...' 
-                      : isMicMuted 
-                        ? 'Seu microfone está mudo' 
+                  {!isConnected
+                    ? 'Aguardando início da sessão'
+                    : aiSpeaking
+                      ? 'Falando...'
+                      : isMicMuted
+                        ? 'Seu microfone está mudo'
                         : isWaitingPause
                           ? `Aguardando você terminar (${(pauseToleranceMs / 1000).toFixed(1)}s)...`
                           : 'Ouvindo você falar...'}
                 </p>
               </div>
 
-              {isConnected && (
+              {isConnected && !isMobileDevice() && (
                 <div className="w-full max-w-[190px] mt-4">
                   <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                     <span>Seu Microfone</span>
                     <span>{isMicMuted ? 'Mudo' : 'Ativo'}</span>
                   </div>
                   <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-emerald-500 transition-all duration-75 rounded-full"
                       style={{ width: `${userVolume}%` }}
                     />
@@ -915,8 +940,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
                 onClick={() => setIsMicMuted(!isMicMuted)}
                 disabled={!isConnected}
                 className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-sm border transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                  isMicMuted 
-                    ? 'bg-rose-50 border-rose-200 text-rose-700' 
+                  isMicMuted
+                    ? 'bg-rose-50 border-rose-200 text-rose-700'
                     : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
                 }`}
               >
@@ -928,8 +953,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
                 onClick={() => setIsSpeakerMuted(!isSpeakerMuted)}
                 disabled={!isConnected}
                 className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-medium text-sm border transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                  isSpeakerMuted 
-                    ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                  isSpeakerMuted
+                    ? 'bg-amber-50 border-amber-200 text-amber-700'
                     : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
                 }`}
               >
@@ -1057,7 +1082,6 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
 
         {/* COLUNA DIREITA: TRANSCRIÇÃO AO VIVO E HISTÓRICO SALVO */}
         <section className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[640px] lg:h-[calc(100vh-120px)] overflow-hidden">
-          
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/80 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-indigo-600" />
@@ -1112,8 +1136,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
             )}
 
             {messages.map((msg) => (
-              <div 
-                key={msg.id} 
+              <div
+                key={msg.id}
                 className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div className="flex items-center gap-1.5 mb-1 px-1">
@@ -1123,10 +1147,10 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
                   <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
                 </div>
 
-                <div 
+                <div
                   className={`max-w-[88%] sm:max-w-[82%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
                     msg.role === 'user'
-                      ? msg.isKeyword 
+                      ? msg.isKeyword
                         ? 'bg-sky-600 text-white rounded-tr-sm'
                         : 'bg-indigo-600 text-white rounded-tr-sm'
                       : 'bg-slate-100 text-slate-800 border border-slate-200/70 rounded-tl-sm'
@@ -1179,7 +1203,7 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
             <div ref={chatEndRef} />
           </div>
 
-          <form 
+          <form
             onSubmit={handleSendText}
             className="p-3.5 border-t border-slate-200 bg-slate-50 flex items-center gap-2"
           >
@@ -1189,8 +1213,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
               onChange={(e) => setTextInput(e.target.value)}
               disabled={!isConnected}
               placeholder={
-                isConnected 
-                  ? `Fale, diga "Tradução [termo]" ou digite em ${selectedLang.name}...` 
+                isConnected
+                  ? `Fale, diga "Tradução [termo]" ou digite em ${selectedLang.name}...`
                   : 'Inicie a conversa por voz acima para habilitar o chat'
               }
               className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
