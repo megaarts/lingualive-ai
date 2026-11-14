@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   try {
     const { systemInstruction, contents } = req.body;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey.trim()}`;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 
     const response = await fetch(url, {
       method: 'POST',
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       return res.status(response.status).json({
-        error: data.error?.message || 'Erro na resposta da API do Gemini'
+        error: data.error?.message || JSON.stringify(data)
       });
     }
 
