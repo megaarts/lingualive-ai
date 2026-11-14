@@ -345,7 +345,7 @@ export default function App() {
       recognitionRef.current = recognition;
       recognition.start();
     } catch (e) {
-      console.warn('Erro ao iniciar reconhecimento:', e);
+      console.warn('Erro ao iniciar o reconhecimento:', e);
     }
   };
 
