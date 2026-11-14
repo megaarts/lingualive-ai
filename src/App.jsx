@@ -287,7 +287,7 @@ export default function App() {
     }
   };
 
-  const startRecognition = () => {
+const startRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
@@ -295,19 +295,27 @@ export default function App() {
 
     try {
       const recognition = new SpeechRecognition();
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
       recognition.lang = selectedLang.code;
-      recognition.continuous = true;
+      recognition.continuous = !isMobile;
       recognition.interimResults = true;
 
       recognition.onresult = (event) => {
+        let finalChunk = '';
         let interim = '';
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const transcriptChunk = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            accumulatedTranscriptRef.current = `${accumulatedTranscriptRef.current} ${transcriptChunk}`.trim();
+            finalChunk += ` ${transcriptChunk}`;
           } else {
             interim += transcriptChunk;
           }
+        }
+
+        if (finalChunk.trim()) {
+          accumulatedTranscriptRef.current = `${accumulatedTranscriptRef.current} ${finalChunk}`.trim();
         }
         currentInterimRef.current = interim;
 
@@ -320,18 +328,24 @@ export default function App() {
       };
 
       recognition.onend = () => {
-        const hasPendingText = (accumulatedTranscriptRef.current + currentInterimRef.current).trim().length > 0;
+        // Se no celular sobrou texto parcial quando o reconhecimento fechou, consolida
+        if (currentInterimRef.current.trim()) {
+          accumulatedTranscriptRef.current = `${accumulatedTranscriptRef.current} ${currentInterimRef.current}`.trim();
+          currentInterimRef.current = '';
+          setLiveUserText(accumulatedTranscriptRef.current);
+        }
+
+        const hasPendingText = accumulatedTranscriptRef.current.trim().length > 0;
 
         if (isConnectedRef.current && !isMicMutedRef.current && !aiSpeakingRef.current && !isThinkingRef.current) {
+          if (hasPendingText && !silenceTimerRef.current) {
+            resetSilenceTimer();
+          }
           setTimeout(() => {
             if (isConnectedRef.current && !isMicMutedRef.current && !aiSpeakingRef.current && !isThinkingRef.current) {
               startRecognition();
             }
-          }, 150);
-
-          if (hasPendingText && !silenceTimerRef.current) {
-            resetSilenceTimer();
-          }
+          }, 200);
         }
       };
 
