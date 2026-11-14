@@ -12,12 +12,12 @@ export default async function handler(req, res) {
 
   const { systemInstruction, contents } = req.body;
   const models = [
-    'gemini-3.8-flash',
     'gemini-flash-latest',
-    'gemini-2.5-flash-lite'
+    'gemini-2.5-flash-lite',
+    'gemini-3.8-flash'
   ];
 
-  let lastError = 'Todos os modelos estão temporariamente indisponíveis.';
+  let lastError = 'Os servidores do Gemini estão temporariamente congestionados. Tente novamente em instantes.';
 
   for (const model of models) {
     try {
@@ -35,7 +35,8 @@ export default async function handler(req, res) {
           generationConfig: {
             temperature: 0.7
           }
-        })
+        }),
+        signal: AbortSignal.timeout(8000)
       });
 
       const data = await response.json();
@@ -50,12 +51,13 @@ export default async function handler(req, res) {
 
       lastError = data.error?.message || `Erro ${response.status} no modelo ${model}`;
 
-      // Se for erro de chave inválida (400/401/403), interrompe imediatamente
       if ([400, 401, 403].includes(response.status)) {
         return res.status(response.status).json({ error: lastError });
       }
     } catch (err) {
-      lastError = err.message;
+      lastError = err.name === 'TimeoutError'
+        ? `Tempo esgotado no modelo ${model}`
+        : err.message;
     }
   }
 
