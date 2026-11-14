@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   try {
     const { systemInstruction, contents } = req.body;
 
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
 
     const response = await fetch(url, {
       method: 'POST',
@@ -25,10 +25,7 @@ export default async function handler(req, res) {
         systemInstruction,
         contents,
         generationConfig: {
-          temperature: 0.7,
-          thinkingConfig: {
-            thinkingBudget: 0
-          }
+          temperature: 0.7
         }
       })
     });
@@ -46,7 +43,7 @@ export default async function handler(req, res) {
 
     if (!reply) {
       return res.status(500).json({
-        error: 'A API retornou uma resposta vazia: ' + JSON.stringify(data)
+        error: 'Resposta vazia da API: ' + JSON.stringify(data)
       });
     }
 
