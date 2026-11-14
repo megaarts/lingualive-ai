@@ -464,7 +464,7 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
     };
 
     // 1. Tenta chamar a rota segura da Vercel (/api/chat) onde a chave fica oculta
-    let aiReply = '';
+   
 
     const serverRes = await fetch('/api/chat', {
       method: 'POST',
