@@ -579,6 +579,8 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
           }
         ]);
         speakResponse(greeting);
+      } else if (isConnectedRef.current && !isMicMutedRef.current) {
+        startRecognition();
       }
     } catch (err) {
       console.error('Falha ao iniciar sessão:', err);
