@@ -12,9 +12,7 @@ export default async function handler(req, res) {
 
   try {
     const { systemInstruction, contents } = req.body;
-
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
-
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
     const response = await fetch(url, {
       method: 'POST',
       headers: {
