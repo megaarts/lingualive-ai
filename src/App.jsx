@@ -465,38 +465,22 @@ REGRAS DE INTERAÇÃO, CORREÇÃO E PALAVRAS-CHAVE:
 
     // 1. Tenta chamar a rota segura da Vercel (/api/chat) onde a chave fica oculta
     let aiReply = '';
+
     const serverRes = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }).catch(() => null);
+  });
 
-    if (serverRes && serverRes.ok) {
-      const serverData = await serverRes.json();
-      aiReply = serverData.reply || '';
-    } else if (serverRes && serverRes.status !== 404) {
-      const errData = await serverRes.json().catch(() => ({}));
-      throw new Error(errData.error || `Erro no servidor (${serverRes.status})`);
-    } else {
-      // 2. Fallback para pré-visualização local onde /api/chat ainda não foi implantado
-      const apiKey = "";
-      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const fallbackRes = await fetch(fallbackUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payload,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 450 }
-        })
-      });
+  const serverData = await serverRes.json().catch(() => ({}));
 
-      if (!fallbackRes.ok) {
-        throw new Error('Configure a variável GEMINI_API_KEY na Vercel para ativar o tutor.');
-      }
+  if (!serverRes.ok) {
+    throw new Error(serverData.error || `Erro no servidor (${serverRes.status})`);
+  }
 
-      const fallbackData = await fallbackRes.json();
-      aiReply = fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    }
+  const aiReply = serverData.reply || '';
+
+
 
     if (aiReply) {
       conversationHistoryRef.current.push({
