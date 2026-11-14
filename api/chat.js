@@ -12,7 +12,9 @@ export default async function handler(req, res) {
 
   try {
     const { systemInstruction, contents } = req.body;
+
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -32,11 +34,12 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       return res.status(response.status).json({
-        error: data.error?.message || JSON.stringify(data)
+        error: data.error?.message || 'Erro na API do Gemini.'
       });
     }
 
-    return res.status(200).json(data);
+    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return res.status(200).json({ reply });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
